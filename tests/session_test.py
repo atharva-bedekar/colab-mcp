@@ -264,3 +264,59 @@ class TestColabSessionProxy:
         proxy._exit_stack = AsyncMock()
         await proxy.cleanup()
         proxy._exit_stack.aclose.assert_called_once()
+
+
+class TestStaticColabTools:
+    @pytest.mark.asyncio
+    async def test_stubbed_client_exposes_all_tools(self, mock_wss):
+        client = session.ColabProxyClient(mock_wss)
+        async with client.stubbed_mcp_client as c:
+            tools = await c.list_tools()
+
+        expected_names = {
+            "add_code_cell",
+            "add_text_cell",
+            "delete_cell",
+            "get_cells",
+            "move_cell",
+            "run_code_cell",
+            "update_cell",
+        }
+        assert {t.name for t in tools} == expected_names
+
+    @pytest.mark.asyncio
+    async def test_stubbed_tool_call_while_disconnected_raises(self, mock_wss):
+        from fastmcp.exceptions import ToolError
+
+        client = session.ColabProxyClient(mock_wss)
+        async with client.stubbed_mcp_client as c:
+            with pytest.raises(ToolError, match=session.INJECTED_TOOL_NAME):
+                await c.call_tool("get_cells", {})
+
+    @pytest.mark.asyncio
+    async def test_mounted_server_lists_all_eight_tools_at_startup(self):
+        from fastmcp import Client, FastMCP
+
+        server = FastMCP(name="TestColabMCP")
+        proxy = session.ColabSessionProxy()
+        await proxy.start_proxy_server()
+        try:
+            server.mount(proxy.proxy_server)
+            for middleware in proxy.middleware:
+                server.add_middleware(middleware)
+
+            async with Client(server) as c:
+                tools = await c.list_tools()
+
+            assert {t.name for t in tools} == {
+                session.INJECTED_TOOL_NAME,
+                "add_code_cell",
+                "add_text_cell",
+                "delete_cell",
+                "get_cells",
+                "move_cell",
+                "run_code_cell",
+                "update_cell",
+            }
+        finally:
+            await proxy.cleanup()

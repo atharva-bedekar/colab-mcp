@@ -19,11 +19,12 @@ from contextlib import AsyncExitStack
 from fastmcp import FastMCP, Client
 from fastmcp.client.transports import ClientTransport
 from fastmcp.dependencies import CurrentContext
+from fastmcp.exceptions import ToolError
 from fastmcp.server.context import Context
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.server.middleware.tool_injection import ToolInjectionMiddleware
 from fastmcp.server.proxy import FastMCPProxy
-from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.tools.tool import FunctionTool, Tool, ToolResult
 from mcp.client.session import ClientSession
 from mcp.types import TextContent
 import webbrowser
@@ -53,10 +54,180 @@ class ColabTransport(ClientTransport):
         return "<ColabSessionProxyTransport>"
 
 
+STATIC_COLAB_TOOL_SCHEMAS: list[dict] = [
+    {
+        "name": "add_code_cell",
+        "description": "Inserts a code type cell at the provided index and shifts existing cells. The resulting new cell id is returned.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "cellIndex": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "The index at which to insert the cell.",
+                },
+                "language": {
+                    "type": "string",
+                    "enum": ["python", "r", "julia"],
+                    "description": "The programming language of the new cell.",
+                },
+                "code": {
+                    "type": "string",
+                    "description": "The code content of the new cell.",
+                },
+            },
+            "required": ["cellIndex", "language", "code"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "add_text_cell",
+        "description": "Inserts a text type cell at the provided index and shifts existing cells. The resulting new cell id is returned.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "cellIndex": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "The index at which to insert the cell.",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "The content of the new cell. This can include Markdown and LaTeX syntax.",
+                },
+            },
+            "required": ["cellIndex", "content"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "delete_cell",
+        "description": "Deletes the cell with the provided cell ID.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "cellId": {
+                    "type": "string",
+                    "description": "The ID of the cell to delete.",
+                },
+            },
+            "required": ["cellId"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "get_cells",
+        "description": "Gets a range of cells as JSON from the notebook.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "cellIndexStart": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "The starting index for the cell range (inclusive). If not provided, this defaults to 0.",
+                },
+                "cellIndexEnd": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "The end index for the cell range (inclusive). This must be greater than or equal to cellIndexStart. If not provided, this defaults to the last available cell index.",
+                },
+                "includeOutputs": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Whether to include the code cell execution outputs in the response. If not provided, this defaults to false.",
+                },
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "move_cell",
+        "description": "Moves a cell to the provided index and shifts existing cells.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "cellId": {
+                    "type": "string",
+                    "description": "The ID of the cell to move.",
+                },
+                "cellIndex": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991,
+                    "description": "The index to move the cell to.",
+                },
+            },
+            "required": ["cellId", "cellIndex"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "run_code_cell",
+        "description": "Executes the code in the cell with the provided cell ID. The cell must be acode cell type. The output of the cell execution is returned.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "cellId": {
+                    "type": "string",
+                    "description": "The ID of the code cell to execute.",
+                },
+            },
+            "required": ["cellId"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "update_cell",
+        "description": "Overwrites the contents of the cell with the provided new content. The cell must already exist and is identified by its cell ID.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "cellId": {
+                    "type": "string",
+                    "description": "The ID of the cell to update.",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "The new content of the cell.",
+                },
+            },
+            "required": ["cellId", "content"],
+            "additionalProperties": False,
+        },
+    },
+]
+
+
+def _disconnected_tool_stub(**_kwargs):
+    raise ToolError(
+        "Not connected to a Google Colab browser session. "
+        f"Call {INJECTED_TOOL_NAME} first."
+    )
+
+
+def _build_stub_mcp_server() -> FastMCP:
+    """Build a FastMCP server pre-populated with static Colab tool schemas."""
+    stub_server = FastMCP()
+    for schema in STATIC_COLAB_TOOL_SCHEMAS:
+        stub_server.add_tool(
+            FunctionTool(
+                name=schema["name"],
+                description=schema["description"],
+                parameters=schema["inputSchema"],
+                fn=_disconnected_tool_stub,
+            )
+        )
+    return stub_server
+
+
 class ColabProxyClient:
     def __init__(self, wss: ColabWebSocketServer):
         self.wss = wss
-        self.stubbed_mcp_client = Client(FastMCP())
+        self.stubbed_mcp_client = Client(_build_stub_mcp_server())
         self.proxy_mcp_client: Client | None = None
         self._exit_stack = AsyncExitStack()
         self._start_task = None

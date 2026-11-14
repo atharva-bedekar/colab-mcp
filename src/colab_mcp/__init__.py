@@ -16,19 +16,21 @@ import argparse
 import asyncio
 import datetime
 import logging
-import tempfile
 import sys
+import tempfile
 
 from fastmcp import FastMCP
 from fastmcp.utilities import logging as fastmcp_logger
 
-from colab_mcp.session import ColabSessionProxy
+from colab_mcp.auth import AuthManager
+from colab_mcp.models import AuthProvider
+from colab_mcp.state import SessionManager
+from colab_mcp.tools import register_tools
+
+mcp = FastMCP(name="ColabMCP", on_duplicate_tools="replace")
 
 
-mcp = FastMCP(name="ColabMCP")
-
-
-def init_logger(logdir):
+def init_logger(logdir: str) -> None:
     log_filename = datetime.datetime.now().strftime(
         f"{logdir}/colab-mcp.%Y-%m-%d_%H-%M-%S.log"
     )
@@ -36,14 +38,21 @@ def init_logger(logdir):
         format="%(asctime)s %(levelname)s:%(message)s",
         datefmt="%m/%d/%Y %I:%M:%S %p",
         filename=log_filename,
-        level=logging.INFO,  # Set the minimum logging level to capture
+        level=logging.INFO,
     )
     fastmcp_logger.get_logger("colab-mcp").info("logging to %s" % log_filename)
 
 
-def parse_args(v):
+def parse_args(v: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="ColabMCP is an MCP server that lets you interact with Colab."
+    )
+    parser.add_argument(
+        "command",
+        nargs="?",
+        choices=["auth"],
+        default=None,
+        help="Optional subcommand ('auth' runs interactive OAuth2 login).",
     )
     parser.add_argument(
         "-l",
@@ -54,33 +63,35 @@ def parse_args(v):
         default=tempfile.mkdtemp(prefix="colab-mcp-logs-"),
     )
     parser.add_argument(
-        "-p",
-        "--enable-proxy",
-        help="if set, enable the runtime proxy (enabled by default).",
+        "--auth",
+        choices=["oauth2", "adc"],
+        default="oauth2",
+        help="Authentication provider to use (default: oauth2).",
+    )
+    parser.add_argument(
+        "--remote",
         action="store_true",
-        default=True,
+        default=False,
+        help="Use remote copy-paste OAuth flow instead of a local loopback server.",
     )
     return parser.parse_args(v)
 
 
-async def main_async():
-    args = parse_args(sys.argv[1:])
+async def main_async(argv: list[str] | None = None) -> None:
+    args = parse_args(sys.argv[1:] if argv is None else argv)
     init_logger(args.log)
 
-    if args.enable_proxy:
-        logging.info("enabling session proxy tools")
-        session_mcp = ColabSessionProxy()
-        await session_mcp.start_proxy_server()
-        mcp.mount(session_mcp.proxy_server)
-        for middleware in session_mcp.middleware:
-            mcp.add_middleware(middleware)
+    if args.command == "auth":
+        if args.remote:
+            AuthManager().run_cli_login(remote=True)
+        else:
+            AuthManager().run_cli_login()
+        return
 
-    try:
+    session_manager = SessionManager(default_auth_provider=AuthProvider(args.auth))
+    register_tools(mcp, session_manager)
+    async with session_manager:
         await mcp.run_async()
-
-    finally:
-        if args.enable_proxy:
-            await session_mcp.cleanup()
 
 
 def main() -> None:

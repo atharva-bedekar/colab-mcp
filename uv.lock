@@ -54,18 +54,6 @@ wheels = [
 ]
 
 [[package]]
-name = "binapy"
-version = "0.8.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/bb/12/64a6df32e9bf0eea5dd2a448d37bbfe49b4aae0acb20b46381bf76304a0a/binapy-0.8.0.tar.gz", hash = "sha256:570c5098d42f037ffb3d2e563998f3cff69ad25ca1f43f9c3815432dccd08233", size = 20315, upload-time = "2024-01-19T11:57:20.096Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/94/50/a2ca5609cffc918a339be4ec5070c6d1d9fab600e6d9164df18040137383/binapy-0.8.0-py3-none-any.whl", hash = "sha256:8af1e1e856900ef8b79ef32236e296127c9cf26414ec355982ff7ce5f173504d", size = 16993, upload-time = "2024-01-19T11:57:18.876Z" },
-]
-
-[[package]]
 name = "cachetools"
 version = "7.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -208,10 +196,10 @@ dependencies = [
     { name = "fastmcp" },
     { name = "google-auth-oauthlib" },
     { name = "jupyter-kernel-client" },
+    { name = "keyring" },
     { name = "mcp", extra = ["cli"] },
     { name = "pydantic" },
     { name = "requests" },
-    { name = "requests-oauth2client" },
     { name = "websockets" },
 ]
 
@@ -235,10 +223,10 @@ requires-dist = [
     { name = "fastmcp", specifier = "==2.14.5" },
     { name = "google-auth-oauthlib", specifier = ">=0.7.0" },
     { name = "jupyter-kernel-client", specifier = ">=0.9.0" },
+    { name = "keyring", specifier = ">=25.0.0" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.20.0" },
     { name = "pydantic", specifier = ">=2.12.3,<3.0.0" },
     { name = "requests", specifier = ">=2.32.5" },
-    { name = "requests-oauth2client", specifier = ">=0.4.0" },
     { name = "websockets", specifier = ">=15.0.1" },
 ]
 
@@ -524,19 +512,6 @@ wheels = [
 ]
 
 [[package]]
-name = "furl"
-version = "2.1.4"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "orderedmultidict" },
-    { name = "six" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/53/e4/203a76fa2ef46cdb0a618295cc115220cbb874229d4d8721068335eb87f0/furl-2.1.4.tar.gz", hash = "sha256:877657501266c929269739fb5f5980534a41abd6bbabcb367c136d1d3b2a6015", size = 57526, upload-time = "2025-03-09T05:36:21.175Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/61/8c/dce3b1b7593858eba995b2dfdb833f872c7f863e3da92aab7128a6b11af4/furl-2.1.4-py2.py3-none-any.whl", hash = "sha256:da34d0b34e53ffe2d2e6851a7085a05d96922b5b578620a37377ff1dbeeb11c8", size = 27550, upload-time = "2025-03-09T05:36:19.928Z" },
-]
-
-[[package]]
 name = "google-auth"
 version = "2.48.0"
 source = { registry = "https://pypi.org/simple" }
@@ -800,20 +775,6 @@ wheels = [
 ]
 
 [[package]]
-name = "jwskate"
-version = "0.12.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "binapy" },
-    { name = "cryptography" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/f5/45/85a545c824439ba37aa61bed6c10ddf89dc51915d28b937931de8cca2eef/jwskate-0.12.2.tar.gz", hash = "sha256:7c38b036b633d689b31c89b358823dbc8c439e4c74596cb1fceb0dfe4cf9efce", size = 128629, upload-time = "2025-04-02T10:06:46.539Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/80/21/4252ccb378deb49f9e38635731b30d43aee03c2238d2fe0100011242af62/jwskate-0.12.2-py3-none-any.whl", hash = "sha256:fd10271bd651db8da7df256f7b5bcface84bf165a203b991ae05fb728f3d3aef", size = 88775, upload-time = "2025-04-02T10:06:45.021Z" },
-]
-
-[[package]]
 name = "keyring"
 version = "25.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -973,18 +934,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/97/b9/3161be15bb8e3ad01be8be5a968a9237c3027c5be504362ff800fca3e442/opentelemetry_api-1.39.1.tar.gz", hash = "sha256:fbde8c80e1b937a2c61f20347e91c0c18a1940cecf012d62e65a7caf08967c9c", size = 65767, upload-time = "2025-12-11T13:32:39.182Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cf/df/d3f1ddf4bb4cb50ed9b1139cc7b1c54c34a1e7ce8fd1b9a37c0d1551a6bd/opentelemetry_api-1.39.1-py3-none-any.whl", hash = "sha256:2edd8463432a7f8443edce90972169b195e7d6a05500cd29e6d13898187c9950", size = 66356, upload-time = "2025-12-11T13:32:17.304Z" },
-]
-
-[[package]]
-name = "orderedmultidict"
-version = "1.0.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "six" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/5c/62/61ad51f6c19d495970230a7747147ce7ed3c3a63c2af4ebfdb1f6d738703/orderedmultidict-1.0.2.tar.gz", hash = "sha256:16a7ae8432e02cc987d2d6d5af2df5938258f87c870675c73ee77a0920e6f4a6", size = 13973, upload-time = "2025-11-18T08:00:42.649Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b2/6c/d8a02ffb24876b5f51fbd781f479fc6525a518553a4196bd0433dae9ff8e/orderedmultidict-1.0.2-py2.py3-none-any.whl", hash = "sha256:ab5044c1dca4226ae4c28524cfc5cc4c939f0b49e978efa46a6ad6468049f79b", size = 11897, upload-time = "2025-11-18T08:00:41.44Z" },
 ]
 
 [[package]]
@@ -1524,22 +1473,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c9/74/b3ff8e6c8446842c3f5c837e9c3dfcfe2018ea6ecef224c710c85ef728f4/requests-2.32.5.tar.gz", hash = "sha256:dbba0bac56e100853db0ea71b82b4dfd5fe2bf6d3754a8893c3af500cec7d7cf", size = 134517, upload-time = "2025-08-18T20:46:02.573Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1e/db/4254e3eabe8020b458f1a747140d32277ec7a271daf1d235b70dc0b4e6e3/requests-2.32.5-py3-none-any.whl", hash = "sha256:2462f94637a34fd532264295e186976db0f5d453d1cdd31473c85a6a161affb6", size = 64738, upload-time = "2025-08-18T20:46:00.542Z" },
-]
-
-[[package]]
-name = "requests-oauth2client"
-version = "1.8.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "attrs" },
-    { name = "binapy" },
-    { name = "furl" },
-    { name = "jwskate" },
-    { name = "requests" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/13/7f/b3084153443ed7b568854b6a6b0d66971b8f25354ec73f2694a85823d8a2/requests_oauth2client-1.8.0.tar.gz", hash = "sha256:a550f18c41bae5082548257b8a4cd453da6315552f451fc81352c2aaa79b89b3", size = 131048, upload-time = "2025-12-22T20:22:03.335Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/69/6d/18a6d7354924d5b9b71cbb6c247784c9eccf0f9f76c83c4e44bc891157bc/requests_oauth2client-1.8.0-py3-none-any.whl", hash = "sha256:afff45c7dcabe3d7762bcc3e25c002b3645cee6f3ce99776dff54c1f6048b83d", size = 85061, upload-time = "2025-12-22T20:22:01.828Z" },
 ]
 
 [[package]]

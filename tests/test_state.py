@@ -53,6 +53,7 @@ async def test_session_manager_create_accessors_and_stop(tmp_path):
     fake_runtime.stop.assert_called_once()
     fake_client.unassign.assert_called_once_with("ep-1")
     assert "trainer" not in mgr.load_sessions()
+    assert "ep-1" not in mgr._last_keep_alive_at
 
 
 @pytest.mark.asyncio
@@ -197,3 +198,78 @@ async def test_adopt_and_stop_untracked_server_session(tmp_path):
     stopped = mgr.stop_session("m-s-orphan-2")
     assert stopped == {"stopped": True, "session": "m-s-orphan-2", "endpoint": "m-s-orphan-2"}
     fake_client.unassign.assert_called_with("m-s-orphan-2")
+
+
+def test_session_status_keep_alive_inactive_and_last_keep_alive_set(tmp_path):
+    from colab_mcp.models import Assignment, RuntimeProxyInfo, Shape, Variant
+    from colab_mcp.state import SessionManager
+
+    fake_client = MagicMock()
+    fake_client.assign.return_value = Assignment(
+        endpoint="ep-1",
+        accelerator="T4",
+        variant=Variant.GPU,
+        machineShape=Shape.STANDARD,
+        runtimeProxyInfo=RuntimeProxyInfo(
+            token="tok-1",
+            tokenExpiresInSeconds=3600,
+            url="https://proxy.colab.google",
+        ),
+    )
+    fake_runtime = MagicMock()
+    fake_runtime.get_kernel_state.return_value = "idle"
+
+    mgr = SessionManager(
+        state_path=tmp_path / "sessions.json",
+        auth_manager=MagicMock(),
+        client_factory=lambda _: fake_client,
+        runtime_factory=lambda *a, **kw: fake_runtime,
+    )
+
+    mgr.create_session(name="trainer", gpu="T4")
+    status = mgr.session_status("trainer")
+    assert status.keep_alive_active is False
+    assert status.last_keep_alive_at is not None
+
+
+@pytest.mark.asyncio
+async def test_session_status_keep_alive_active_inside_loop(tmp_path):
+    import asyncio
+    import uuid
+
+    from colab_mcp.models import SessionState
+    from colab_mcp.state import SessionManager
+
+    fake_client = MagicMock()
+    fake_runtime = MagicMock()
+    fake_runtime.get_kernel_state.return_value = "idle"
+
+    mgr = SessionManager(
+        state_path=tmp_path / "sessions.json",
+        auth_manager=MagicMock(),
+        client_factory=lambda _: fake_client,
+        runtime_factory=lambda *a, **kw: fake_runtime,
+        keep_alive_interval_s=0.02,
+    )
+    later = (datetime.now(timezone.utc) + timedelta(seconds=3600)).isoformat()
+    mgr.save_sessions(
+        {
+            "trainer": SessionState(
+                name="trainer",
+                notebook_hash=str(uuid.uuid4()),
+                endpoint="ep-1",
+                variant="GPU",
+                accelerator="T4",
+                shape="STANDARD",
+                runtime_url="https://proxy.colab.google",
+                proxy_token="tok-1",
+                proxy_expires_at=later,
+            )
+        }
+    )
+
+    async with mgr:
+        await asyncio.sleep(0.06)
+        status = mgr.session_status("trainer")
+        assert status.keep_alive_active is True
+        assert status.last_keep_alive_at is not None

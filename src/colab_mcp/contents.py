@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import json
 import urllib.parse
 from pathlib import Path
 from typing import Any
@@ -97,21 +99,29 @@ class ContentsClient:
         )
         return {"name": filename, "path": remote_path, "size_bytes": len(raw_bytes)}
 
-    def download(self, remote_path: str, local_path: str | Path) -> dict[str, Any]:
-        """Download a remote file to local_path."""
-        data = self._request("GET", remote_path, params={"content": "1"})
+    def _fetch_bytes(self, remote_path: str) -> bytes:
+        """Fetch raw file bytes from remote_path via the Contents API."""
+        data = self._request(
+            "GET",
+            remote_path,
+            params={"content": "1", "type": "file", "format": "base64"},
+        )
         if not data:
             raise FileNotFoundError(f"Remote path not found: {remote_path}")
         if data.get("type") == "directory":
             raise IsADirectoryError(f"Remote path is a directory: {remote_path}")
 
         fmt = data.get("format")
-        payload = data.get("content") or ""
+        payload = data.get("content")
         if fmt == "base64":
-            content_bytes = base64.b64decode(payload)
-        else:
-            content_bytes = str(payload).encode("utf-8")
+            return base64.b64decode(payload or "")
+        if fmt == "json" or isinstance(payload, (dict, list)):
+            return json.dumps(payload, indent=2).encode("utf-8")
+        return str(payload or "").encode("utf-8")
 
+    def download(self, remote_path: str, local_path: str | Path) -> dict[str, Any]:
+        """Download a remote file to local_path."""
+        content_bytes = self._fetch_bytes(remote_path)
         dst = Path(local_path)
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_bytes(content_bytes)
@@ -119,6 +129,50 @@ class ContentsClient:
             "remote_path": remote_path,
             "local_path": str(dst),
             "size_bytes": len(content_bytes),
+            "sha256": hashlib.sha256(content_bytes).hexdigest(),
+        }
+
+    def stat(self, remote_path: str) -> RemoteFileEntry:
+        """Return metadata for a single remote file/directory."""
+        data = self._request("GET", remote_path, params={"content": "0"})
+        if not data:
+            raise FileNotFoundError(f"Remote path not found: {remote_path}")
+        return RemoteFileEntry.model_validate(data)
+
+    def read_file(
+        self,
+        remote_path: str,
+        *,
+        tail_lines: int | None = None,
+        max_bytes: int = 65536,
+    ) -> dict[str, Any]:
+        """Read a remote file as text, optionally limited to trailing lines or bytes."""
+        raw = self._fetch_bytes(remote_path)
+        if tail_lines is not None:
+            text = raw.decode("utf-8", errors="replace")
+            lines = text.splitlines(keepends=True)
+            total_lines = len(lines)
+            if tail_lines <= 0:
+                selected: list[str] = []
+                truncated = total_lines > 0
+            else:
+                selected = lines[-tail_lines:]
+                truncated = total_lines > tail_lines
+            return {
+                "remote_path": remote_path,
+                "content": "".join(selected),
+                "size_bytes": len(raw),
+                "total_lines": total_lines,
+                "truncated": truncated,
+            }
+
+        truncated = len(raw) > max_bytes
+        content = raw[:max_bytes].decode("utf-8", errors="replace")
+        return {
+            "remote_path": remote_path,
+            "content": content,
+            "size_bytes": len(raw),
+            "truncated": truncated,
         }
 
     def delete(self, remote_path: str) -> dict[str, Any]:

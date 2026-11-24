@@ -119,6 +119,7 @@ class SessionManager:
         self._runtimes: dict[str, ColabRuntime] = {}
         self._lock = threading.RLock()
         self._keep_alive_task: asyncio.Task[None] | None = None
+        self._last_keep_alive_at: dict[str, str] = {}
 
     def _get_client(self) -> ColabClient:
         session = self.auth_manager.get_authorized_session(self.default_auth_provider)
@@ -292,6 +293,9 @@ class SessionManager:
 
         with contextlib.suppress(Exception):
             client.keep_alive(assignment.endpoint)
+            self._last_keep_alive_at[assignment.endpoint] = datetime.now(
+                timezone.utc
+            ).isoformat()
 
         with contextlib.suppress(RuntimeError):
             asyncio.get_running_loop()
@@ -371,6 +375,9 @@ class SessionManager:
             running=state.running,
             last_execution=state.last_execution,
             proxy_expires_at=state.proxy_expires_at,
+            keep_alive_active=self._keep_alive_task is not None
+            and not self._keep_alive_task.done(),
+            last_keep_alive_at=self._last_keep_alive_at.get(state.endpoint),
         )
 
     def stop_session(self, name: str) -> dict[str, Any]:
@@ -398,6 +405,7 @@ class SessionManager:
             endpoint = listed.endpoint
 
         client.unassign(endpoint)
+        self._last_keep_alive_at.pop(endpoint, None)
 
         if key is not None:
             with self._lock:
@@ -432,6 +440,9 @@ class SessionManager:
             for state in sessions.values():
                 try:
                     await asyncio.to_thread(client.keep_alive, state.endpoint)
+                    self._last_keep_alive_at[state.endpoint] = datetime.now(
+                        timezone.utc
+                    ).isoformat()
                 except Exception as exc:
                     logger.debug("Keep-alive failed for %s: %s", state.endpoint, exc)
 

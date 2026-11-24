@@ -77,3 +77,130 @@ def test_list_dir_delete_and_errors(tmp_path):
 
     sess.request.return_value = MagicMock(status_code=204, text="")
     assert client.delete("/content/a.py") == {"deleted": True, "remote_path": "/content/a.py"}
+
+
+def test_download_sends_format_params_and_sha256(tmp_path):
+    import hashlib
+
+    from colab_mcp.contents import ContentsClient
+
+    payload = b"sha-me"
+    sess = MagicMock()
+    sess.request.return_value = MagicMock(
+        status_code=200,
+        json=lambda: {
+            "type": "file",
+            "format": "base64",
+            "content": base64.b64encode(payload).decode("ascii"),
+        },
+    )
+    client = ContentsClient("https://proxy.colab.google", "tok-1", session=sess)
+    out = tmp_path / "sha.bin"
+    res = client.download("/content/sha.bin", out)
+    params = sess.request.call_args.kwargs["params"]
+    assert params["content"] == "1"
+    assert params["type"] == "file"
+    assert params["format"] == "base64"
+    assert out.read_bytes() == payload
+    assert res["sha256"] == hashlib.sha256(payload).hexdigest()
+    assert len(res["sha256"]) == 64
+
+
+def test_download_json_dict_fallback(tmp_path):
+    import json
+
+    from colab_mcp.contents import ContentsClient
+
+    sess = MagicMock()
+    sess.request.return_value = MagicMock(
+        status_code=200,
+        json=lambda: {
+            "type": "file",
+            "format": "json",
+            "content": {"b": 2, "a": [1, 3]},
+        },
+    )
+    client = ContentsClient("https://proxy.colab.google", "tok-1", session=sess)
+    out = tmp_path / "data.json"
+    client.download("/content/data.json", out)
+    parsed = json.loads(out.read_text(encoding="utf-8"))
+    assert parsed == {"b": 2, "a": [1, 3]}
+
+
+def test_stat_returns_entry_with_content_zero():
+    from colab_mcp.contents import ContentsClient
+    from colab_mcp.models import RemoteFileEntry
+
+    sess = MagicMock()
+    sess.request.return_value = MagicMock(
+        status_code=200,
+        json=lambda: {
+            "name": "a.py",
+            "path": "content/a.py",
+            "type": "file",
+            "size": 12,
+            "last_modified": "2026-01-01T00:00:00Z",
+        },
+    )
+    client = ContentsClient("https://proxy.colab.google", "tok-1", session=sess)
+    entry = client.stat("/content/a.py")
+    assert isinstance(entry, RemoteFileEntry)
+    assert entry.name == "a.py"
+    assert entry.size == 12
+    assert sess.request.call_args.kwargs["params"]["content"] == "0"
+
+
+def test_read_file_tail_lines():
+    from colab_mcp.contents import ContentsClient
+
+    raw = b"one\ntwo\nthree\nfour"
+    sess = MagicMock()
+    sess.request.return_value = MagicMock(
+        status_code=200,
+        json=lambda: {
+            "type": "file",
+            "format": "base64",
+            "content": base64.b64encode(raw).decode("ascii"),
+        },
+    )
+    client = ContentsClient("https://proxy.colab.google", "tok-1", session=sess)
+
+    full = client.read_file("/content/log.txt", tail_lines=10)
+    assert full["content"] == "one\ntwo\nthree\nfour"
+    assert full["total_lines"] == 4
+    assert full["truncated"] is False
+    assert full["size_bytes"] == len(raw)
+
+    tail = client.read_file("/content/log.txt", tail_lines=2)
+    assert tail["content"] == "three\nfour"
+    assert tail["truncated"] is True
+    assert tail["total_lines"] == 4
+
+    none = client.read_file("/content/log.txt", tail_lines=0)
+    assert none["content"] == ""
+    assert none["truncated"] is True
+
+
+def test_read_file_max_bytes_truncation():
+    from colab_mcp.contents import ContentsClient
+
+    raw = b"abcdefghij"
+    sess = MagicMock()
+    sess.request.return_value = MagicMock(
+        status_code=200,
+        json=lambda: {
+            "type": "file",
+            "format": "base64",
+            "content": base64.b64encode(raw).decode("ascii"),
+        },
+    )
+    client = ContentsClient("https://proxy.colab.google", "tok-1", session=sess)
+
+    cut = client.read_file("/content/f.txt", max_bytes=4)
+    assert cut["content"] == "abcd"
+    assert cut["size_bytes"] == 10
+    assert cut["truncated"] is True
+
+    whole = client.read_file("/content/f.txt", max_bytes=100)
+    assert whole["content"] == "abcdefghij"
+    assert whole["truncated"] is False

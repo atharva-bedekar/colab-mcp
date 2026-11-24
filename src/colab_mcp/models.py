@@ -176,6 +176,8 @@ class SessionStatus(_ColabBaseModel):
     running: str | None = None
     last_execution: tuple[str, str | None, str] | None = None
     proxy_expires_at: str
+    keep_alive_active: bool = False
+    last_keep_alive_at: str | None = None
 
 
 class RemoteFileEntry(_ColabBaseModel):

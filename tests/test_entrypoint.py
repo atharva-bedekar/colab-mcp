@@ -40,6 +40,6 @@ async def test_entrypoint_auth_subcommand_and_mcp_wiring(tmp_path):
         fake_mgr.__aexit__.assert_awaited_once()
 
     tools = await colab_mcp.mcp.get_tools()
-    assert len(tools) == 14
+    assert len(tools) == 21
     assert importlib.util.find_spec("colab_mcp.session") is None
     assert importlib.util.find_spec("colab_mcp.websocket_server") is None

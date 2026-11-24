@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import re
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -17,6 +18,13 @@ from colab_mcp.models import (
     parse_notebook_code_cells,
     write_notebook_with_outputs,
 )
+
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def _strip_ansi(text: str) -> str:
+    return _ANSI_RE.sub("", text)
 
 
 def _build_env_prelude(env: dict[str, str] | None) -> str:
@@ -110,6 +118,7 @@ class ColabRuntime:
         allow_stdin: bool = False,
         env: dict[str, str] | None = None,
         ensure_cwd: bool = True,
+        compact: bool = False,
     ) -> ExecutionResult:
         """Execute Python code on the remote kernel and collect structured outputs."""
         if ensure_cwd:
@@ -141,7 +150,13 @@ class ColabRuntime:
             elif out_type == "error":
                 ename = out.get("ename", "Error")
                 evalue = out.get("evalue", "")
-                error_summary = f"{ename}: {evalue}" if evalue else str(ename)
+                tb = out.get("traceback")
+                if compact and tb:
+                    if isinstance(tb, str):
+                        tb = tb.splitlines()
+                    error_summary = "\n".join(_strip_ansi(str(line)) for line in tb)
+                else:
+                    error_summary = f"{ename}: {evalue}" if evalue else str(ename)
 
         status = str(reply.get("status", "ok"))
         if status == "error" and error_summary is None:
@@ -149,9 +164,15 @@ class ColabRuntime:
             evalue = reply.get("evalue", "")
             error_summary = f"{ename}: {evalue}" if evalue else str(ename)
 
+        result_outputs = (
+            outputs
+            if not compact
+            else [out for out in outputs if out.get("output_type") not in ("stream", "error")]
+        )
+
         return ExecutionResult(
             status=status,
-            outputs=outputs,
+            outputs=result_outputs,
             stdout="".join(stdout_parts),
             stderr="".join(stderr_parts),
             error=error_summary,

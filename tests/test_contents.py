@@ -204,3 +204,49 @@ def test_read_file_max_bytes_truncation():
     whole = client.read_file("/content/f.txt", max_bytes=100)
     assert whole["content"] == "abcdefghij"
     assert whole["truncated"] is False
+
+
+def test_relative_paths_resolve_under_content(tmp_path):
+    from colab_mcp.contents import ContentsClient, _normalize_remote_path
+
+    assert _normalize_remote_path("rpo_bundle.zip") == "/content/rpo_bundle.zip"
+    assert _normalize_remote_path("./sub/file.txt") == "/content/sub/file.txt"
+    assert _normalize_remote_path(".hidden") == "/content/.hidden"
+    assert _normalize_remote_path("content/rpo_bundle.zip") == "/content/rpo_bundle.zip"
+    assert _normalize_remote_path("/content/rpo_bundle.zip") == "/content/rpo_bundle.zip"
+    assert _normalize_remote_path("/tmp/archive.zip") == "/tmp/archive.zip"
+    assert _normalize_remote_path("/") == "/"
+    assert _normalize_remote_path(".") == "/content"
+
+    src = tmp_path / "rpo_bundle.zip"
+    src.write_bytes(b"zipdata")
+    sess = MagicMock()
+    sess.request.return_value = MagicMock(status_code=200, json=lambda: {})
+    client = ContentsClient("https://proxy.colab.google", "tok-1", session=sess)
+
+    up = client.upload(src, "rpo_bundle.zip")
+    assert up["path"] == "/content/rpo_bundle.zip"
+    assert sess.request.call_args.kwargs["url"] == (
+        "https://proxy.colab.google/api/contents/content/rpo_bundle.zip"
+    )
+    assert sess.request.call_args.kwargs["json"]["path"] == "/content/rpo_bundle.zip"
+
+    sess.request.return_value = MagicMock(
+        status_code=200,
+        json=lambda: {
+            "type": "file",
+            "format": "base64",
+            "content": base64.b64encode(b"zipdata").decode("ascii"),
+        },
+    )
+    dl = client.download("rpo_bundle.zip", tmp_path / "out.zip")
+    assert dl["remote_path"] == "/content/rpo_bundle.zip"
+    assert sess.request.call_args.kwargs["url"] == (
+        "https://proxy.colab.google/api/contents/content/rpo_bundle.zip"
+    )
+
+    # Absolute /tmp path remains rooted at /
+    client.download("/tmp/archive.zip", tmp_path / "tmp_out.zip")
+    assert sess.request.call_args.kwargs["url"] == (
+        "https://proxy.colab.google/api/contents/tmp/archive.zip"
+    )

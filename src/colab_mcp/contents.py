@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import posixpath
 import urllib.parse
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,21 @@ from typing import Any
 import requests
 
 from colab_mcp.models import ColabRequestError, RemoteFileEntry
+
+
+def _normalize_remote_path(remote_path: str) -> str:
+    """Resolve relative paths against /content to match exec_code's default cwd."""
+    if not remote_path or remote_path == ".":
+        return "/content"
+    if remote_path.startswith("/"):
+        normalized = posixpath.normpath(remote_path)
+        return "/" + normalized.lstrip("/") if normalized != "/" else "/"
+    normalized = posixpath.normpath(remote_path)
+    if normalized == ".":
+        return "/content"
+    if normalized == "content" or normalized.startswith("content/"):
+        return f"/{normalized}"
+    return posixpath.normpath(f"/content/{normalized}")
 
 
 class ContentsClient:
@@ -37,7 +53,8 @@ class ContentsClient:
         params: dict[str, str] | None = None,
         json_data: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
-        quoted_path = urllib.parse.quote(remote_path.strip("/"), safe="/")
+        resolved_path = _normalize_remote_path(remote_path)
+        quoted_path = urllib.parse.quote(resolved_path.strip("/"), safe="/")
         url = f"{self.base_url}/api/contents/{quoted_path}"
         query_params = {
             "authuser": "0",
@@ -82,22 +99,23 @@ class ContentsClient:
         src = Path(local_path)
         if not src.exists():
             raise FileNotFoundError(f"Local path not found: {src}")
+        resolved_path = _normalize_remote_path(remote_path)
         raw_bytes = src.read_bytes()
         b64_content = base64.b64encode(raw_bytes).decode("ascii")
-        filename = Path(remote_path).name or src.name
+        filename = Path(resolved_path).name or src.name
         self._request(
             "PUT",
-            remote_path,
+            resolved_path,
             json_data={
                 "name": filename,
-                "path": remote_path,
+                "path": resolved_path,
                 "type": "file",
                 "format": "base64",
                 "content": b64_content,
                 "chunk": 1,
             },
         )
-        return {"name": filename, "path": remote_path, "size_bytes": len(raw_bytes)}
+        return {"name": filename, "path": resolved_path, "size_bytes": len(raw_bytes)}
 
     def _fetch_bytes(self, remote_path: str) -> bytes:
         """Fetch raw file bytes from remote_path via the Contents API."""
@@ -121,12 +139,13 @@ class ContentsClient:
 
     def download(self, remote_path: str, local_path: str | Path) -> dict[str, Any]:
         """Download a remote file to local_path."""
-        content_bytes = self._fetch_bytes(remote_path)
+        resolved_path = _normalize_remote_path(remote_path)
+        content_bytes = self._fetch_bytes(resolved_path)
         dst = Path(local_path)
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_bytes(content_bytes)
         return {
-            "remote_path": remote_path,
+            "remote_path": resolved_path,
             "local_path": str(dst),
             "size_bytes": len(content_bytes),
             "sha256": hashlib.sha256(content_bytes).hexdigest(),
@@ -147,7 +166,8 @@ class ContentsClient:
         max_bytes: int = 65536,
     ) -> dict[str, Any]:
         """Read a remote file as text, optionally limited to trailing lines or bytes."""
-        raw = self._fetch_bytes(remote_path)
+        resolved_path = _normalize_remote_path(remote_path)
+        raw = self._fetch_bytes(resolved_path)
         if tail_lines is not None:
             text = raw.decode("utf-8", errors="replace")
             lines = text.splitlines(keepends=True)
@@ -159,7 +179,7 @@ class ContentsClient:
                 selected = lines[-tail_lines:]
                 truncated = total_lines > tail_lines
             return {
-                "remote_path": remote_path,
+                "remote_path": resolved_path,
                 "content": "".join(selected),
                 "size_bytes": len(raw),
                 "total_lines": total_lines,
@@ -169,7 +189,7 @@ class ContentsClient:
         truncated = len(raw) > max_bytes
         content = raw[:max_bytes].decode("utf-8", errors="replace")
         return {
-            "remote_path": remote_path,
+            "remote_path": resolved_path,
             "content": content,
             "size_bytes": len(raw),
             "truncated": truncated,
@@ -177,5 +197,6 @@ class ContentsClient:
 
     def delete(self, remote_path: str) -> dict[str, Any]:
         """Delete a remote file or empty directory."""
-        self._request("DELETE", remote_path)
-        return {"deleted": True, "remote_path": remote_path}
+        resolved_path = _normalize_remote_path(remote_path)
+        self._request("DELETE", resolved_path)
+        return {"deleted": True, "remote_path": resolved_path}
